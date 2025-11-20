@@ -1,0 +1,7 @@
+{
+  "name": "GDN-IA",
+  "description": "Plataforma completa de geração de notícias, SEO e áudio usando Google Gemini 2.5 e Search Grounding.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

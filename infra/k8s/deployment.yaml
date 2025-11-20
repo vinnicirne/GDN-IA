@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: newsgen-worker
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: newsgen-worker
+  template:
+    metadata:
+      labels:
+        app: newsgen-worker
+    spec:
+      containers:
+      - name: worker
+        image: gcr.io/newsgen-ai-production/worker:latest
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: REDIS_URL
+          value: "redis://redis-service:6379"
+        - name: SUPABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: newsgen-secrets
+              key: supabase-url

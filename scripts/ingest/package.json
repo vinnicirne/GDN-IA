@@ -1,0 +1,13 @@
+{
+  "name": "@newsgen/scripts",
+  "version": "0.0.1",
+  "main": "run.ts",
+  "scripts": {
+    "start": "ts-node run.ts"
+  },
+  "dependencies": {
+    "google-trends-api": "^4.9.2",
+    "rss-parser": "^3.13.0",
+    "puppeteer": "^21.9.0"
+  }
+}
