@@ -1,218 +1,186 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  LayoutDashboard, 
-  PenTool, 
-  Settings, 
-  LogOut, 
-  Menu, 
-  X,
-  Zap,
-  Loader2
-} from 'lucide-react';
-import { supabase } from './lib/supabase';
-import { Session } from '@supabase/supabase-js';
+import React, { useState, useEffect, Suspense } from 'react';
+import { createPortal } from 'react-dom';
+import { UserProvider, useUser } from './contexts/UserContext';
+import LoginPage from './LoginPage';
+import DashboardPage from './DashboardPage';
+// Lazy Load do Admin para reduzir bundle size inicial
+const AdminPage = React.lazy(() => import('./pages/admin'));
+import { AdminGate } from './components/admin/AdminGate';
 
-import Dashboard from './components/Dashboard';
-import NewsGenerator from './components/NewsGenerator';
-import ArticleEditor from './components/ArticleEditor';
-import Login from './components/Auth/Login';
-import Signup from './components/Auth/Signup';
-import ForgotPassword from './components/Auth/ForgotPassword';
-import { ViewState, Article } from './types';
-
-const SidebarItem = ({ icon: Icon, label, active, onClick }: any) => (
-  <button
-    onClick={onClick}
-    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all border-l-2 ${
-      active 
-        ? 'bg-green-900/20 border-green-500 text-green-400 shadow-[0_0_10px_rgba(34,197,94,0.1)]' 
-        : 'border-transparent text-gray-500 hover:bg-gray-800 hover:text-gray-300'
-    }`}
-  >
-    <Icon className="w-5 h-5" />
-    <span className="font-medium">{label}</span>
-  </button>
+// Componente de Loading para o Suspense do Admin
+const AdminLoader = () => (
+  <div className="min-h-screen bg-black flex flex-col items-center justify-center space-y-4">
+    <i className="fas fa-circle-notch fa-spin text-4xl text-green-500"></i>
+    <p className="text-gray-400 font-mono text-sm animate-pulse">Carregando Módulo Administrativo...</p>
+  </div>
 );
 
-const App: React.FC = () => {
-  const [session, setSession] = useState<Session | null>(null);
-  const [isLoadingSession, setIsLoadingSession] = useState(true);
-  const [authView, setAuthView] = useState<'login' | 'signup' | 'forgot'>('login');
+// Este componente consome o contexto e lida com a lógica principal do aplicativo.
+function AppContent() {
+  const { user, loading, error } = useUser();
   
-  const [currentView, setCurrentView] = useState<ViewState>('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activeArticle, setActiveArticle] = useState<Article | null>(null);
+  // ROTEAMENTO: Inicializa o estado com base na URL (query param ?page=admin)
+  const getInitialPage = (): 'dashboard' | 'admin' => {
+    if (typeof window !== 'undefined' && window.location.search) {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const page = params.get('page');
+            return (page === 'admin') ? 'admin' : 'dashboard';
+        } catch (e) {
+            console.warn('Erro ao ler URLSearchParams:', e);
+            return 'dashboard';
+        }
+    }
+    return 'dashboard';
+  };
 
+  const [currentPage, setCurrentPage] = useState<'dashboard' | 'admin'>(getInitialPage);
+
+  // Sincroniza a URL quando o estado muda e lida com o botão "Voltar" do navegador
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setTimeout(() => setIsLoadingSession(false), 800);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setIsLoadingSession(false);
-    });
-
-    return () => subscription.unsubscribe();
+    const handlePopState = () => {
+       setCurrentPage(getInitialPage());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    setAuthView('login');
-  };
+  useEffect(() => {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        if (currentPage === 'dashboard') {
+          params.delete('page');
+        } else {
+          params.set('page', currentPage);
+        }
+        
+        const queryString = params.toString() ? '?' + params.toString() : '';
+        const newUrl = `${window.location.pathname}${queryString}`;
+        
+        // Evita pushState se a URL já for a mesma (evita loop ou histórico duplicado)
+        if (window.location.search !== queryString) {
+            try {
+                window.history.pushState({}, '', newUrl);
+            } catch (e) {
+                // Silencia erros de SecurityError em ambientes sandboxed (blob:) que bloqueiam pushState
+                console.warn('Navigation state update skipped due to environment restrictions:', e);
+            }
+        }
+    } catch (e) {
+        console.error('Erro na lógica de roteamento:', e);
+    }
+  }, [currentPage]);
 
-  const handleArticleGenerated = (article: Article) => {
-    setActiveArticle(article);
-    setCurrentView('editor');
-  };
 
-  const renderContent = () => {
-    switch (currentView) {
-      case 'dashboard':
-        return <Dashboard />;
-      case 'generator':
-        return <NewsGenerator onArticleGenerated={handleArticleGenerated} />;
-      case 'editor':
-        return activeArticle ? (
-          <ArticleEditor 
-            article={activeArticle} 
-            onBack={() => setCurrentView('generator')} 
-          />
-        ) : (
-          <div className="text-center py-20 text-gray-500">Nenhum artigo selecionado.</div>
-        );
-      default:
-        return <div className="p-4 text-gray-400">Em construção...</div>;
+  // Navega para a página de administração
+  const handleNavigateToAdmin = () => {
+    if (user && (user.role === 'admin' || user.role === 'super_admin')) {
+      setCurrentPage('admin');
     }
   };
+  
+  const handleNavigateToDashboard = () => {
+    setCurrentPage('dashboard');
+  };
 
-  // 1. Loading State (Dark Mode)
-  if (isLoadingSession) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-black space-y-6 animate-fade-in">
-        <div className="relative">
-          <div className="absolute inset-0 bg-green-500 rounded-full blur-xl opacity-20 animate-pulse"></div>
-          <div className="bg-gray-900 p-4 rounded-2xl shadow-[0_0_30px_rgba(22,163,74,0.3)] relative z-10 border border-green-900/50">
-            <div className="bg-gradient-to-tr from-green-500 to-emerald-700 p-3 rounded-xl">
-              <Zap className="w-10 h-10 text-black" />
-            </div>
+  if (error) {
+    const errorString = typeof error === 'string' ? error : JSON.stringify(error, null, 2);
+    const isSqlConfigError = errorString.startsWith('SQL_CONFIG_ERROR:');
+    const instructions = isSqlConfigError ? errorString.replace('SQL_CONFIG_ERROR:', '').trim() : '';
+    
+    const modalRoot = document.getElementById('modal-root');
+    if (!modalRoot) return null;
+
+    return createPortal(
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+        <div className={`w-full ${isSqlConfigError ? 'max-w-2xl' : 'max-w-lg'} bg-black rounded-lg shadow-xl border border-red-500/50`}>
+          <div className="p-6 border-b border-red-900/50 text-center">
+            <i className="fas fa-exclamation-triangle text-red-400 text-4xl mb-3"></i>
+            <h1 className="text-xl font-bold text-red-300">{isSqlConfigError ? 'Ação Necessária: Configurar Banco de Dados' : 'Erro Crítico do Sistema'}</h1>
+          </div>
+          <div className="p-6">
+            {isSqlConfigError ? (
+                <div className="text-left text-sm space-y-4">
+                    <p className="text-red-400">
+                        Ocorreu um erro de configuração do banco de dados que impede o aplicativo de funcionar. Isso geralmente é causado por permissões de acesso (Row Level Security) ausentes ou incorretas.
+                    </p>
+                    <p className="text-gray-300 font-semibold">Para corrigir o problema, siga as instruções abaixo, que foram copiadas do arquivo de setup:</p>
+                    <div className="relative">
+                        <pre className="bg-gray-950/50 border border-gray-700 text-green-300 p-4 rounded-md text-xs whitespace-pre-wrap overflow-x-auto max-h-60">
+                            <code>{instructions}</code>
+                        </pre>
+                        <button 
+                            onClick={() => navigator.clipboard.writeText(instructions)}
+                            className="absolute top-2 right-2 px-2 py-1 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded transition-colors"
+                            title="Copiar Instruções"
+                        >
+                            <i className="fas fa-copy mr-1"></i> Copiar
+                        </button>
+                    </div>
+                </div>
+            ) : (
+                <>
+                    <p className="text-red-400 text-center text-base leading-relaxed whitespace-pre-wrap">{errorString}</p>
+                    <p className="text-xs text-gray-400 text-center mt-4">
+                        Isso pode ser um problema temporário. Por favor, tente recarregar a página. Se o problema persistir, contate o suporte.
+                    </p>
+                </>
+            )}
+          </div>
+          <div className="p-4 bg-black/50 flex justify-center rounded-b-lg border-t border-red-900/50">
+            <button 
+                onClick={() => window.location.reload()}
+                className="px-6 py-2 font-bold rounded-lg transition text-white bg-red-600 hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black focus:ring-red-500"
+            >
+                {isSqlConfigError ? 'Recarregar Após Executar' : 'Recarregar'}
+            </button>
           </div>
         </div>
-        
-        <div className="text-center space-y-2">
-           <h2 className="text-xl font-bold text-white tracking-wider">GDN<span className="text-green-500">-AI</span></h2>
-           <div className="flex items-center gap-2 text-gray-400 text-sm font-medium bg-gray-900 px-4 py-2 rounded-full border border-green-900/30 shadow-sm">
-             <Loader2 className="animate-spin w-4 h-4 text-green-500" />
-             <span className="text-xs uppercase tracking-widest">Inicializando Sistema...</span>
-           </div>
-        </div>
+      </div>,
+      modalRoot
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        {/* Loader inicial simples */}
+        <p className="text-green-400 animate-pulse">Iniciando sistema...</p>
       </div>
     );
   }
 
-  // 2. Unauthenticated State
-  if (!session) {
-    switch (authView) {
-      case 'signup':
-        return <Signup onNavigate={setAuthView} />;
-      case 'forgot':
-        return <ForgotPassword onNavigate={(view) => setAuthView(view as any)} />;
-      default:
-        return <Login onNavigate={setAuthView} />;
-    }
-  }
-
-  // 3. Authenticated App (Dashboard Shell)
   return (
-    <div className="flex h-screen bg-black overflow-hidden">
-      {/* Sidebar */}
-      <aside 
-        className={`fixed inset-y-0 left-0 z-50 bg-gray-900/80 backdrop-blur-md border-r border-green-900/20 w-64 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        <div className="h-full flex flex-col">
-          <div className="h-20 flex items-center px-6 border-b border-green-900/20">
-            <div className="flex items-center gap-2 text-white font-bold text-xl">
-              <div className="bg-gradient-to-tr from-green-500 to-emerald-700 p-1.5 rounded-lg shadow-md">
-                <Zap className="w-5 h-5 text-black" />
-              </div>
-              GDN<span className="text-green-500">-AI</span>
-            </div>
-            <button onClick={() => setSidebarOpen(false)} className="ml-auto lg:hidden text-gray-400">
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-
-          <div className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-            <div className="text-xs font-bold text-gray-500 uppercase px-4 mb-2 tracking-widest">Menu Principal</div>
-            <SidebarItem 
-              icon={LayoutDashboard} 
-              label="Dashboard" 
-              active={currentView === 'dashboard'} 
-              onClick={() => setCurrentView('dashboard')} 
+    <>
+      {!user ? (
+        <LoginPage />
+      ) : (
+        <>
+          {currentPage === 'dashboard' && (
+            <DashboardPage 
+              onNavigateToAdmin={handleNavigateToAdmin}
             />
-            <SidebarItem 
-              icon={PenTool} 
-              label="Gerador de Notícias" 
-              active={currentView === 'generator' || currentView === 'editor'} 
-              onClick={() => setCurrentView('generator')} 
-            />
-            
-            <div className="text-xs font-bold text-gray-500 uppercase px-4 mt-8 mb-2 tracking-widest">Ferramentas</div>
-            <SidebarItem icon={Settings} label="Configurações" active={currentView === 'tools'} onClick={() => setCurrentView('tools')} />
-          </div>
-
-          <div className="p-4 border-t border-green-900/20">
-            <div className="px-4 pb-4">
-               <p className="text-xs text-gray-500 mb-1">Logado como:</p>
-               <p className="text-sm text-white truncate" title={session.user.email}>{session.user.email}</p>
-               <div className="mt-2 flex items-center gap-1.5 text-xs text-green-400 font-mono">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                  ONLINE: Plano Free
-               </div>
-            </div>
-            <button 
-              onClick={handleSignOut}
-              className="w-full flex items-center space-x-3 px-4 py-3 text-gray-500 hover:text-red-400 transition-colors border-t border-green-900/20 mt-2"
-            >
-              <LogOut className="w-5 h-5" />
-              <span className="font-medium">Desconectar</span>
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden relative bg-black">
-        {/* Mobile Header */}
-        <header className="h-16 bg-gray-900 border-b border-green-900/30 flex items-center px-4 lg:hidden justify-between">
-          <div className="flex items-center gap-2 font-bold text-white">
-             GDN<span className="text-green-500">-AI</span>
-          </div>
-          <button onClick={() => setSidebarOpen(true)} className="p-2 text-gray-400">
-            <Menu className="w-6 h-6" />
-          </button>
-        </header>
-
-        {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 scroll-smooth">
-          {renderContent()}
-        </main>
-      </div>
-      
-      {/* Overlay for mobile */}
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-80 backdrop-blur-sm z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
+          )}
+          {currentPage === 'admin' && (
+             <AdminGate onAccessDenied={handleNavigateToDashboard}>
+               <Suspense fallback={<AdminLoader />}>
+                  <AdminPage 
+                    onNavigateToDashboard={handleNavigateToDashboard}
+                  />
+               </Suspense>
+            </AdminGate>
+          )}
+        </>
       )}
-    </div>
+    </>
   );
-};
+}
 
-export default App;
+// O componente principal do App agora é apenas o wrapper do Provider.
+export default function App() {
+  return (
+    <UserProvider>
+      <AppContent />
+    </UserProvider>
+  );
+}

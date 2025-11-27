@@ -1,126 +1,154 @@
-// Application Types
-export enum ArticleStatus {
-  DRAFT = 'DRAFT',
-  GENERATED = 'GENERATED',
-  PUBLISHED = 'PUBLISHED',
-}
 
-export enum ToneType {
-  FACTUAL = 'FACTUAL',
-  SENSATIONAL = 'SENSATIONAL',
-  PREDICTIVE = 'PREDICTIVE',
-  EDUCATIONAL = 'EDUCATIONAL',
-}
 
-// UI Labels for Tone Enum
-export const ToneLabels: Record<ToneType, string> = {
-  [ToneType.FACTUAL]: 'Factual/Jornalístico',
-  [ToneType.SENSATIONAL]: 'Sensacionalista/Viral',
-  [ToneType.PREDICTIVE]: 'Preditivo/Análise',
-  [ToneType.EDUCATIONAL]: 'Educativo',
-};
+import { Plan, ServiceKey, UserPlan } from './types/plan.types'; // Importar os novos tipos
 
-export interface SeoData {
-  focusKeyword: string;
-  seoTitle: string;
-  metaDescription: string;
-  tags: string[];
-  score: number;
-}
+export type { Plan, ServiceKey, UserPlan }; // Re-exportar para uso em outros arquivos
 
-export interface CanvaStructure {
-  headline: string;
-  subheadline: string;
-  suggestedImagePrompt: string;
-  colors: string[];
-}
+export type NewsStatus = 'pending' | 'approved' | 'rejected';
 
-export interface Article {
-  id: string;
-  user_id?: string;
+export interface Source {
+  uri: string;
   title: string;
-  slug: string;
-  summary: string;
-  content: string;
-  tone: ToneType;
-  status: ArticleStatus;
-  
-  // Mapped from JSONB in DB
-  seo: SeoData; 
-  canva: CanvaStructure;
-  sourceUrls: string[]; 
-  
-  // Audio relation
-  audioUrl?: string;
-  audioDuration?: number;
-  
-  createdAt: string;
-  updatedAt?: string;
 }
 
-export interface TrendResult {
-  query: string;
-  title: string;
-  snippet: string;
-  url: string;
-}
-
-export type ViewState = 'dashboard' | 'generator' | 'editor' | 'tools';
-
-// Supabase Database Types Definition
-export interface Database {
-  public: {
-    Tables: {
-      articles: {
-        Row: {
-          id: string;
-          user_id: string;
-          title: string;
-          slug: string;
-          summary: string;
-          content: string;
-          tone: ToneType;
-          status: ArticleStatus;
-          seo_data: SeoData;
-          canva_data: CanvaStructure;
-          source_signals: string[]; // Stored as JSONB array of strings
-          created_at: string;
-          updated_at: string;
-          published_at: string | null;
-        };
-        Insert: {
-          id?: string;
-          user_id?: string; // Optional if handled by RLS/Trigger, but usually passed or inferred
-          title: string;
-          slug?: string;
-          summary?: string;
-          content?: string;
-          tone?: ToneType;
-          status?: ArticleStatus;
-          seo_data?: SeoData;
-          canva_data?: CanvaStructure;
-          source_signals?: string[];
-        };
-        Update: Partial<Database['public']['Tables']['articles']['Insert']>;
-      };
-      audio_assets: {
-        Row: {
-          id: string;
-          article_id: string;
-          storage_path: string;
-          public_url: string;
-          duration_seconds: number;
-          voice_id: string;
-          created_at: string;
-        };
-        Insert: {
-          article_id: string;
-          storage_path: string;
-          public_url: string;
-          duration_seconds?: number;
-          voice_id?: string;
-        };
-      };
-    };
+export interface NewsArticle {
+  id?: number;
+  titulo: string;
+  conteudo: string;
+  sources?: Source[];
+  status?: NewsStatus;
+  tipo?: string; // Tipo do conteúdo (news, image, landing_page, etc)
+  author_id?: string; // ID do autor
+  criado_em?: string;
+  author?: {
+    email: string;
   };
+}
+
+export type UserRole = 'user' | 'editor' | 'admin' | 'super_admin';
+export type UserStatus = 'active' | 'inactive' | 'banned';
+
+export interface User {
+  id: string;
+  email: string;
+  full_name: string;
+  role: UserRole;
+  credits: number;
+  status: UserStatus;
+  plan: UserPlan; // Usar UserPlan do types/plan.types.ts
+  created_at?: string;
+  last_login?: string; // Novo campo
+}
+
+export interface Log {
+  id: number;
+  usuario_id: string;
+  acao: string;
+  modulo: string;
+  data: string;
+  user_email?: string;
+  detalhes?: Record<string, any>;
+}
+
+export type AdminView = 'dashboard' | 'users' | 'news' | 'payments' | 'multi_ia_system' | 'logs' | 'plans' | 'docs' | 'security';
+
+export interface AllowedDomain {
+  id: string;
+  domain: string;
+  created_at: string;
+}
+
+export type TransactionStatus = 'pending' | 'approved' | 'failed';
+export type PaymentMethod = 'pix' | 'card';
+
+export interface Transaction {
+  id: number;
+  usuario_id: string;
+  valor: number;
+  metodo: PaymentMethod;
+  status: TransactionStatus;
+  data: string;
+  external_id?: string; // Mercado Pago ID
+  metadata?: any; // Dados extras (plano comprado, qtd creditos, etc)
+  user?: {
+    email: string;
+  };
+}
+
+// --- CONFIGURAÇÃO DE PLANOS ---
+// O PlanConfig antigo foi substituído pela interface Plan de types/plan.types.ts
+
+// --- NEW PAYMENT SETTINGS TYPES ---
+
+export interface GatewayConfig {
+  enabled: boolean;
+  publicKey: string;
+  secretKey: string;
+}
+
+export interface CreditPackage {
+  id: string;
+  nome: string;
+  quantidade: number;
+  preco: number;
+  ativo: boolean;
+}
+
+export interface PaymentSettings {
+  gateways: {
+    stripe: GatewayConfig;
+    mercadoPago: GatewayConfig;
+  };
+  packages: CreditPackage[];
+}
+
+// --- NEW MULTI-AI SYSTEM TYPES ---
+
+export interface AIPlatform {
+  enabled: boolean;
+  apiKey: string;
+  costPerMillionTokens: number;
+  maxTokens: number;
+}
+
+export interface AIPlatformSettings {
+  gemini: AIPlatform;
+  openai: AIPlatform;
+  claude: AIPlatform;
+}
+
+export interface AIModel {
+  id: string;
+  nome: string;
+  plataforma: 'gemini' | 'openai' | 'claude';
+  contexto_maximo: number;
+  capacidades: {
+    vision: boolean;
+    audio: boolean;
+  };
+  ativo: boolean;
+  custo_token: number;
+}
+
+export interface MultiAISettings {
+  platforms: AIPlatformSettings;
+  models: AIModel[];
+}
+
+export interface AILog {
+  id: number;
+  usuario_id: string;
+  modelo_id: string;
+  tokens: number;
+  custo: number;
+  data: string;
+  user?: { 
+    email: string;
+  };
+}
+
+// --- FEEDBACK TYPES ---
+export interface FeedbackData {
+  rating: number;
+  comment: string;
 }
